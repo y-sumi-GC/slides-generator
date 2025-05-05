@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+import google.auth.transport.requests
+import requests
 import os
 
-def get_google_creds():
+def get_credentials_from_query():
     client_config = {
         "web": {
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
@@ -20,30 +21,27 @@ def get_google_creds():
     flow = Flow.from_client_config(
         client_config,
         scopes=[
-            'https://www.googleapis.com/auth/presentations',
-            'https://www.googleapis.com/auth/drive.file'
+            "https://www.googleapis.com/auth/presentations",
+            "https://www.googleapis.com/auth/drive.file"
         ],
         redirect_uri="https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"
     )
 
-    auth_url, _ = flow.authorization_url(prompt='consent')
-    st.markdown(f"[こちらのリンクを開いて認証してください]({auth_url})")
-    code = st.text_input("認証コードをここに貼り付けてください:")
-
-    creds = None
-    if code:
-        try:
-            flow.fetch_token(code=code)
-            creds = flow.credentials
-        except Exception as e:
-            st.error("認証に失敗しました。コードが無効か、期限切れです。もう一度試してください。")
-    return creds
+    query_params = st.experimental_get_query_params()
+    if "code" not in query_params:
+        auth_url, _ = flow.authorization_url(prompt='consent')
+        st.markdown(f"[こちらをクリックしてGoogleにログイン]({auth_url})")
+        st.stop()
+    else:
+        code = query_params["code"][0]
+        flow.fetch_token(code=code)
+        return flow.credentials
 
 def generate_slide(creds, df):
-    slides = build('slides', 'v1', credentials=creds)
-    presentation = slides.presentations().create(body={'title': 'CSVから自動生成'}).execute()
-    pres_id = presentation['presentationId']
-    slide_id = presentation['slides'][0]['objectId']
+    slides = build("slides", "v1", credentials=creds)
+    presentation = slides.presentations().create(body={"title": "CSVから自動生成"}).execute()
+    pres_id = presentation["presentationId"]
+    slide_id = presentation["slides"][0]["objectId"]
 
     requests = []
     for i, row in df.iterrows():
@@ -70,24 +68,24 @@ def generate_slide(creds, df):
             "insertText": {
                 "objectId": f"text_{i}",
                 "insertionIndex": 0,
-                "text": ', '.join([str(v) for v in row.values])
+                "text": ", ".join([str(v) for v in row.values])
             }
         })
 
     slides.presentations().batchUpdate(
-        presentationId=pres_id, body={'requests': requests}
+        presentationId=pres_id, body={"requests": requests}
     ).execute()
 
     return f"https://docs.google.com/presentation/d/{pres_id}/edit"
 
-st.title("📊 CSV → Google Slides ヒートマップ生成ツール")
+st.title("📊 CSV → Google Slides ヒートマップ生成ツール（自動認証）")
 
-uploaded = st.file_uploader("CSVファイルをアップロードしてください", type='csv')
+uploaded = st.file_uploader("CSVファイルをアップロードしてください", type="csv")
 if uploaded:
     df = pd.read_csv(uploaded)
     st.write("プレビュー：", df.head())
 
-    creds = get_google_creds()
+    creds = get_credentials_from_query()
     if creds:
         if st.button("スライドを生成"):
             url = generate_slide(creds, df)
