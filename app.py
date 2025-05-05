@@ -3,16 +3,17 @@ import pandas as pd
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+import os
 
 def get_google_creds():
     client_config = {
-        "installed": {
+        "web": {
             "client_id": st.secrets["GOOGLE_CLIENT_ID"],
             "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob"]
+            "redirect_uris": ["https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"]
         }
     }
 
@@ -22,16 +23,20 @@ def get_google_creds():
             'https://www.googleapis.com/auth/presentations',
             'https://www.googleapis.com/auth/drive.file'
         ],
-        redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+        redirect_uri="https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"
     )
+
     auth_url, _ = flow.authorization_url(prompt='consent')
     st.markdown(f"[こちらのリンクを開いて認証してください]({auth_url})")
     code = st.text_input("認証コードをここに貼り付けてください:")
 
     creds = None
     if code:
-        flow.fetch_token(code=code)
-        creds = flow.credentials
+        try:
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+        except Exception as e:
+            st.error("認証に失敗しました。コードが無効か、期限切れです。もう一度試してください。")
     return creds
 
 def generate_slide(creds, df):
