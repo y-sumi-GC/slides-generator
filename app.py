@@ -27,15 +27,19 @@ def get_credentials_from_query():
         redirect_uri="https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"
     )
 
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if "code" not in query_params:
         auth_url, _ = flow.authorization_url(prompt='consent')
         st.markdown(f"[こちらをクリックしてGoogleにログイン]({auth_url})")
         st.stop()
     else:
-        code = query_params["code"][0]
-        flow.fetch_token(code=code)
-        return flow.credentials
+        code = query_params["code"]
+        try:
+            flow.fetch_token(code=code)
+            return flow.credentials
+        except Exception as e:
+            st.error("認証コードが無効か期限切れです。もう一度ログインからやり直してください。")
+            st.stop()
 
 def generate_slide(creds, df):
     slides = build("slides", "v1", credentials=creds)
@@ -78,7 +82,7 @@ def generate_slide(creds, df):
 
     return f"https://docs.google.com/presentation/d/{pres_id}/edit"
 
-st.title("📊 CSV → Google Slides ヒートマップ生成ツール（自動認証）")
+st.title("📊 CSV → Google Slides ヒートマップ生成ツール（自動認証・最新）")
 
 uploaded = st.file_uploader("CSVファイルをアップロードしてください", type="csv")
 if uploaded:
