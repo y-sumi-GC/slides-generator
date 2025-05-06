@@ -2,44 +2,49 @@ import streamlit as st
 import pandas as pd
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-import google.auth.transport.requests
-import requests
-import os
 
-def get_credentials_from_query():
-    client_config = {
-        "web": {
-            "client_id": st.secrets["GOOGLE_CLIENT_ID"],
-            "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "redirect_uris": ["https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"]
-        }
+# Webアプリ用のredirect URI（Streamlit CloudのアプリURL）
+REDIRECT_URI = "https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"
+
+client_config = {
+    "web": {
+        "client_id": st.secrets["GOOGLE_CLIENT_ID"],
+        "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "redirect_uris": [REDIRECT_URI]
     }
+}
 
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=[
-            "https://www.googleapis.com/auth/presentations",
-            "https://www.googleapis.com/auth/drive.file"
-        ],
-        redirect_uri="https://slides-generator-cgoprblddggy2thr2fb4oi.streamlit.app/"
-    )
-
-    query_params = st.query_params
-    if "code" not in query_params:
-        auth_url, _ = flow.authorization_url(prompt='consent')
-        st.markdown(f"[こちらをクリックしてGoogleにログイン]({auth_url})")
+def ensure_credentials():
+    if "flow" not in st.session_state:
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=[
+                "https://www.googleapis.com/auth/presentations",
+                "https://www.googleapis.com/auth/drive.file"
+            ],
+            redirect_uri=REDIRECT_URI
+        )
+        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes="true")
+        st.session_state.flow = flow
+        st.markdown(f"[Googleアカウントでログイン]({auth_url})")
         st.stop()
-    else:
+
+    # 認証後のリダイレクトURLから認証コードを取得
+    query_params = st.query_params
+    if "code" in query_params:
         code = query_params["code"]
         try:
-            flow.fetch_token(code=code)
-            return flow.credentials
+            st.session_state.flow.fetch_token(code=code)
+            return st.session_state.flow.credentials
         except Exception as e:
-            st.error("認証コードが無効か期限切れです。もう一度ログインからやり直してください。")
+            st.error("認証エラーが発生しました。もう一度お試しください。")
             st.stop()
+    else:
+        st.info("ログインしてください")
+        st.stop()
 
 def generate_slide(creds, df):
     slides = build("slides", "v1", credentials=creds)
@@ -82,14 +87,14 @@ def generate_slide(creds, df):
 
     return f"https://docs.google.com/presentation/d/{pres_id}/edit"
 
-st.title("📊 CSV → Google Slides ヒートマップ生成ツール（自動認証・最新）")
+st.title("📊 CSV → Google Slides ツール（Web認証・セッション対応）")
 
 uploaded = st.file_uploader("CSVファイルをアップロードしてください", type="csv")
 if uploaded:
     df = pd.read_csv(uploaded)
     st.write("プレビュー：", df.head())
 
-    creds = get_credentials_from_query()
+    creds = ensure_credentials()
     if creds:
         if st.button("スライドを生成"):
             url = generate_slide(creds, df)
